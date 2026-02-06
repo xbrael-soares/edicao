@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Editor de Vídeo Automático - Teste</title>
+  <script src="https://cdn.jsdelivr.net/npm/@ffmpeg/ffmpeg@0.12.15/dist/umd/ffmpeg.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #111; color: white; margin: 0; padding: 20px; text-align: center; }
+    h1 { color: #ff4d4d; }
+    #container { max-width: 900px; margin: 0 auto; background: #222; padding: 20px; border-radius: 10px; }
+    input, button, textarea { margin: 10px auto; padding: 12px; font-size: 16px; width: 90%; max-width: 600px; display: block; }
+    button { background: #ff4d4d; color: white; border: none; cursor: pointer; border-radius: 6px; padding: 12px 20px; font-size: 18px; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    video { max-width: 100%; margin: 20px auto; border: 2px solid #444; border-radius: 8px; display: block; }
+    #status { min-height: 60px; font-weight: bold; color: #ffcc00; }
+  </style>
+</head>
+<body>
+<div id="container">
+  <h1>Editor Automático de Vídeo Motivacional</h1>
+  <p>Upload do vídeo (mp4 curto recomendado)</p>
+  <input type="file" id="videoInput" accept="video/*" />
+  <p>Texto (use \n para quebra de linha):</p>
+  <textarea id="texto" rows="4">
+Enquanto existir um sonho,
+existirão motivos para continuar.
+  </textarea>
+  <button id="processarBtn" disabled>Processar Vídeo</button>
+  <div id="status">Aguardando vídeo... (se botão não liberar ou erro persistir, teste no Chrome ou modo anônimo)</div>
+  <div id="progress"></div>
+  <video id="preview" controls></video>
+  <br/>
+  <a id="downloadLink" style="display:none; color:#4dff4d; font-size:18px;">Baixar vídeo editado</a>
+</div>
+
+<script>
+  console.log('Script iniciado. Verificando FFmpeg...');
+  let ffmpeg;
+  try {
+    const { createFFmpeg, fetchFile } = FFmpeg;
+    ffmpeg = createFFmpeg({
+      log: true,
+      corePath: 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js'
+    });
+    console.log('FFmpeg instanciado com sucesso');
+  } catch (e) {
+    console.error('Falha ao instanciar FFmpeg:', e);
+    document.getElementById('status').textContent = 'Erro crítico: FFmpeg não carregou. Tente no Chrome ou ajuste privacidade do Edge.';
+  }
+
+  let videoFile = null;
+
+  document.getElementById('videoInput').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) {
+      videoFile = file;
+      document.getElementById('processarBtn').disabled = false;
+      document.getElementById('status').textContent = `Vídeo selecionado: ${file.name}`;
+      document.getElementById('preview').src = URL.createObjectURL(file);
+    }
+  });
+
+  document.getElementById('processarBtn').addEventListener('click', async () => {
+    if (!videoFile || !ffmpeg) {
+      document.getElementById('status').textContent = 'Erro: FFmpeg não está disponível. Tente outro navegador.';
+      return;
+    }
+    const btn = document.getElementById('processarBtn');
+    btn.disabled = true;
+    document.getElementById('status').textContent = 'Carregando FFmpeg... (aguarde, pode demorar)';
+
+    try {
+      if (!ffmpeg.isLoaded()) {
+        await ffmpeg.load();
+        console.log('FFmpeg carregado!');
+      }
+      document.getElementById('status').textContent = 'Processando...';
+      await ffmpeg.writeFile('input.mp4', await fetchFile(videoFile));
+
+      const texto = document.getElementById('texto').value.trim().replace(/\n/g, '\\n').replace(/'/g, "\\'") || 'Enquanto existir um sonho, existirão motivos para continuar.';
+
+      await ffmpeg.run(
+        '-i', 'input.mp4',
+        '-vf', `drawtext=text='${texto}':fontcolor=white:fontsize=45:borderw=3:x=(w-text_w)/2:y=h-text_h-80,geq=r=0:g=0:b=0:a='if(lt(Y,h*0.35),0.7*(1-Y/(h*0.35)),0)',split[v][g];[v][g]overlay=0:H-h*0.35,format=yuv420p`,
+        '-c:v', 'libx264', '-crf', '27', '-preset', 'veryfast',
+        '-c:a', 'copy',
+        'output.mp4'
+      );
+
+      const data = ffmpeg.FS('readFile', 'output.mp4');
+      const blob = new Blob([data.buffer], {type: 'video/mp4'});
+      const url = URL.createObjectURL(blob);
+
+      document.getElementById('preview').src = url;
+      document.getElementById('downloadLink').href = url;
+      document.getElementById('downloadLink').download = 'video_editado.mp4';
+      document.getElementById('downloadLink').style.display = 'inline-block';
+
+      document.getElementById('status').textContent = 'Pronto! Veja preview e baixe.';
+    } catch (err) {
+      document.getElementById('status').textContent = 'Erro no processamento: ' + err.message + ' — Veja console (F12) para detalhes.';
+      console.error('Erro detalhado:', err);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>
